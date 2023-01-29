@@ -1,7 +1,7 @@
 
 # imports important for Airflow
 import pendulum
-
+from datetime import timedelta
 from pandas import DataFrame, json_normalize
 from airflow.decorators import dag, task
 from airflow.models import Variable
@@ -15,15 +15,14 @@ import os
 
 
 @dag(
-    schedule_interval=None,                             # interval how often the dag will run (can be cron expression as string)
-    start_date=pendulum.datetime(2023, 1, 10, tz="UTC"), # from what point on the dag will run (will only be scheduled after this date)
+    schedule='@daily',                             # interval how often the dag will run (can be cron expression as string)
+    start_date=pendulum.datetime(2023, 1, 28, tz="UTC"), # from what point on the dag will run (will only be scheduled after this date)
     catchup=False,                                      # no catchup needed, because we are running an api that returns now values
     tags=['iQair'],                      # tag the DAQ so it's easy to find in AirflowUI
 )
 
 
 def AirQuality():
-
          
     @task.python
     def extract_data():
@@ -33,17 +32,14 @@ def AirQuality():
         iQpass = Variable.get("iQair_api_key")
         time_now = pendulum.now().strftime('%Y%m%d_T%H-%M-%S')
 
-        # for city, details in cities.items():
         payload = {'key':iQpass, 'country':'Poland', 'state':'Pomerania', 'city':'Gdynia'}
-        # payload = {'key':iQpass, 'country':city, 'state':details['state'], 'city':details['city']}                
-
+           
         r = requests.get("http://api.airvisual.com/v2/city", params=payload)    
         r_string = r.json()
 
         with open(f'/opt/airflow/completed/api_request-{payload["city"]}-{time_now}.json', "w") as newfile:
             json.dump(r_string, newfile)            
 
-        # print(f'The type is {type(weather_data)}')
         return r_string
 
 
@@ -65,18 +61,10 @@ def AirQuality():
 
         final_df = air_quality_df.filter(['city', 'country', 'location_coord', 'cur_pol_ts', 'cur_pol_aquis', 'cur_weather_ts', 'cur_weather_temp'])
 
-        final_df_json = final_df.to_json(orient='records')
-
         final_df_dict = final_df.to_dict(orient='records')
-
-        print(type(final_df_json))
 
         return final_df_dict
 
-        # with open("/opt/airflow/completed/test.txt", "w") as newfile:
-        #     newfile.write(air_quality_df_txt)        
-
-        # print(air_quality_df)
 
     @task
     def insert_db_records(air_data):
@@ -126,13 +114,11 @@ def AirQuality():
     @task()
     def query_results(air_data):
         print(air_data)
+
  
-    # Define the main flow
-    
+    # Define the main flow    
     air_data = extract_data()
     insert_db_records(transform_data(air_data))
-    # weather_summary = transform(weather_data)
-    # load(weather_summary)
     query_results(air_data)
 
 
